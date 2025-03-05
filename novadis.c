@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 
 unsigned long address = 0;
+int byteswap = 0;
+int number_format = 0;
 
 const char *devnames[] = {
 	"DEV0",
@@ -99,16 +101,32 @@ void eaddr(uint16_t ins, char *buf) {
 
 	switch (index) {
 		case 0b00:
-			sprintf(temp, "%d", displace);
+			switch (number_format) {
+				case 0: sprintf(temp, "%d", displace); break;
+				case 1: sprintf(temp, "0x%x", displace); break;
+				case 2: sprintf(temp, "0%o", displace); break;
+			}
 			break;
 		case 0b01:
-			sprintf(temp, "%c%d [%d/0x%x/o%o]", sdisplace >= 0 ? '+' : '-', abs(sdisplace), address + sdisplace, address + sdisplace, address + sdisplace);
+			switch (number_format) {
+				case 0: sprintf(temp, "%c%d [%d]", sdisplace >= 0 ? '+' : '-', abs(sdisplace), address + sdisplace); break;
+				case 1: sprintf(temp, "%c0x%x [0x%x]", sdisplace >= 0 ? '+' : '-', abs(sdisplace), address + sdisplace); break;
+				case 2: sprintf(temp, "%c0%o [0%o]", sdisplace >= 0 ? '+' : '-', abs(sdisplace), address + sdisplace); break;
+			}
 			break;
 		case 0b10:
-			sprintf(temp, "AC2%c%d", sdisplace >= 0 ? '+' : '-', abs(sdisplace));
+			switch (number_format) {
+				case 0: sprintf(temp, "AC2 %c %d", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+				case 1: sprintf(temp, "AC2 %c 0x%x", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+				case 2: sprintf(temp, "AC2 %c 0%o", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+			}	
 			break;
 		case 0b11:
-			sprintf(temp, "AC3%c%d", sdisplace >= 0 ? '+' : '-', abs(sdisplace));
+			switch (number_format) {
+				case 0: sprintf(temp, "AC3 %c %d", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+				case 1: sprintf(temp, "AC3 %c 0x%x", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+				case 2: sprintf(temp, "AC3 %c 0%o", sdisplace >= 0 ? '+' : '-', abs(sdisplace)); break;
+			}
 			break;
 	}
 	strcat(buf, temp);
@@ -287,7 +305,11 @@ void dsz(uint16_t ins, char *buf) { jump(ins, buf, "DSZ"); }
 void ret(uint16_t ins, char *buf) { strcat(buf, "RET"); }
 
 void trap(uint16_t ins, char *buf) {
-	sprintf(buf, "TRAP AC$d,AC%d,%d", extract(ins, 13, 2), extract(ins, 11, 2), extract(ins, 4, 7));
+	switch (number_format) {
+		case 0: sprintf(buf, "TRAP AC$d,AC%d,%d", extract(ins, 13, 2), extract(ins, 11, 2), extract(ins, 4, 7)); break;
+		case 1: sprintf(buf, "TRAP AC$d,AC%d,0x%x", extract(ins, 13, 2), extract(ins, 11, 2), extract(ins, 4, 7)); break;
+		case 2: sprintf(buf, "TRAP AC$d,AC%d,0%o", extract(ins, 13, 2), extract(ins, 11, 2), extract(ins, 4, 7)); break;
+	}
 }
 
 void dia(uint16_t ins, char *buf) { iof(ins, buf, "DIA"); }
@@ -359,12 +381,44 @@ void decode(uint16_t ins, char *buf) {
 	strcat(buf, "[UNKNOWN]");
 }
 
+void usage() {
+	printf("Usage: novadis [options] <filename>\n");
+	printf("    Options:\n");
+	printf("        -s: Swap bytes before decoding\n");
+	printf("        -d: Use decimal for numbers\n");
+	printf("        -x: Use hexadecimal for numbers\n");
+	printf("        -o: Use octal for numbers\n");
+}
+
 int main(int argc, char **argv) {
 
-	const char *filename = argv[1];
 
-	if (argc != 2) {
-		fprintf(stderr, "Usage: novadec <filename>\n");
+	int opt;
+
+	while ((opt = getopt(argc, argv, "shoxd")) != -1) {
+		switch (opt) {
+			case 's': 
+				byteswap = 1;
+				break;
+			case 'd':
+				number_format = 0;
+				break;
+			case 'x':
+				number_format = 1;
+				break;
+			case 'o':
+				number_format = 2;
+				break;
+			case 'h':
+				usage();
+				return -1;
+		}
+	}
+
+	const char *filename = argv[optind];
+
+	if (argc <= optind) {
+		usage();
 		return -1;
 	}
 
@@ -384,13 +438,26 @@ int main(int argc, char **argv) {
 		uint8_t bh = (wrd >> 8);
 		uint8_t bl = (wrd & 0xFF);
 
+		if (byteswap == 1) {
+			int t = bh;
+			bh = bl;
+			bl = t;
+			wrd = bh << 8 | bl;
+		}
+
 		decode(wrd, tmp);
 
-		printf("%8d / %08x / %08o / '%c%c' : %04x - %s\n", 
-			address, address, address, 
-			(bh >= 32 && bh < 127) ? bh : ' ', 
-			(bl >= 32 && bl < 127) ? bl : ' ', 
-			wrd, tmp);
+		switch (number_format) {
+			case 0:
+				printf("%5d : '%c%c' : %5d : %s\n", address, (bh >= 32 && bh < 127) ? bh : ' ', (bl >= 32 && bl < 127) ? bl : ' ', wrd, tmp);
+				break;
+			case 1:
+				printf("%4x : '%c%c' : %04x : %s\n", address, (bh >= 32 && bh < 127) ? bh : ' ', (bl >= 32 && bl < 127) ? bl : ' ', wrd, tmp);
+				break;
+			case 2:
+				printf("%6o : '%c%c' : %6o : %s\n", address, (bh >= 32 && bh < 127) ? bh : ' ', (bl >= 32 && bl < 127) ? bl : ' ', wrd, tmp);
+				break;
+		}
 		address++;
 	}
 
