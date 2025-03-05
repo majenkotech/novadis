@@ -1,2 +1,5 @@
 novadis
-novadis.o
+oct2bin
+hex2bin
+*.o
+
