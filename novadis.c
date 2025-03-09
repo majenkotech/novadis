@@ -384,6 +384,7 @@ void decode(uint16_t ins, char *buf) {
 void usage() {
 	printf("Usage: novadis [options] <filename>\n");
 	printf("    Options:\n");
+	printf("        -a <address>: Start address\n");
 	printf("        -s: Swap bytes before decoding\n");
 	printf("        -d: Use decimal for numbers\n");
 	printf("        -x: Use hexadecimal for numbers\n");
@@ -395,8 +396,11 @@ int main(int argc, char **argv) {
 
 	int opt;
 
-	while ((opt = getopt(argc, argv, "shoxd")) != -1) {
+	while ((opt = getopt(argc, argv, "shoxda:")) != -1) {
 		switch (opt) {
+			case 'a':
+				address = strtoul(optarg, NULL, 0);
+				break;
 			case 's': 
 				byteswap = 1;
 				break;
